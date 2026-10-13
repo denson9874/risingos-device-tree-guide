@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Dump stock firmware, generate device and vendor trees, and build RisingOS Revived 9.0 (seventeen branch, LineageOS 24.0 base).">
+<title>RisingOS Device Tree Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root { color-scheme: light; }
+body { margin: 0; }
+img { max-width: 100%; }
+
+/* Layout: two-column reference — sticky step index left, ~72ch reading column right; one column with a collapsible index on phones. */
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --ink: #161a21;
+  --muted: #586070;
+  --line: #dadfe6;
+  --accent: #b93d0b;
+  --accent-soft: #fbece4;
+  --code-bg: #12161c;
+  --code-fg: #e3e6eb;
+  --code-muted: #8b94a3;
+  --chip-bg: #e9ecf0;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Public Sans", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1116; --surface: #151a21; --ink: #e4e7ec; --muted: #9aa3b1; --line: #27303b;
+    --accent: #f5874a; --accent-soft: #2b1a11; --code-bg: #090c10; --code-fg: #dde1e8;
+    --code-muted: #7d8696; --chip-bg: #1e252e; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --surface: #151a21; --ink: #e4e7ec; --muted: #9aa3b1; --line: #27303b;
+  --accent: #f5874a; --accent-soft: #2b1a11; --code-bg: #090c10; --code-fg: #dde1e8;
+  --code-muted: #7d8696; --chip-bg: #1e252e; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 16px/1.6 var(--font-body);
+  padding: 0 16px;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
+}
+
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 40px 72px; }
+
+/* Header */
+.masthead { display: grid; gap: 20px; padding-bottom: 32px; border-bottom: 1px solid var(--line); margin-bottom: 32px; }
+.eyebrow {
+  font: 500 12px/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent);
+}
+h1 {
+  font: 700 clamp(2rem, 4.6vw, 3.1rem)/1.05 var(--font-display); letter-spacing: -0.02em;
+  margin: 0; text-wrap: balance; max-width: 20ch;
+}
+h1 .for { display: block; color: var(--muted); font-weight: 600; font-size: 0.55em; letter-spacing: -0.01em; margin-top: 10px; }
+.provenance { margin: 0; color: var(--muted); font-size: 14px; max-width: 72ch; }
+
+.glance {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+}
+.glance div { background: var(--surface); padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.glance dt { font: 500 11px/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.glance dd { margin: 0; font-size: 14.5px; overflow-wrap: anywhere; }
+.glance code { font-size: 13px; }
+
+/* Columns */
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 56px; align-items: start; }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); }
+nav.toc summary {
+  font: 500 11px/1.3 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted);
+  cursor: pointer; list-style: none; padding: 4px 0 10px;
+}
+nav.toc summary::-webkit-details-marker { display: none; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.toc a {
+  display: grid; grid-template-columns: 20px 1fr; gap: 8px; padding: 5px 8px; border-radius: 6px;
+  color: var(--ink); text-decoration: none; font-size: 13.5px; line-height: 1.35;
+}
+nav.toc a:hover { background: var(--chip-bg); }
+nav.toc a.active { background: var(--accent-soft); color: var(--accent); }
+nav.toc .n { font: 500 12px/1.6 var(--font-mono); color: var(--accent); }
+
+main { min-width: 0; max-width: 76ch; }
+section { padding-bottom: 12px; }
+section + section { border-top: 1px solid var(--line); padding-top: 28px; margin-top: 28px; }
+
+h2 {
+  font: 700 1.6rem/1.2 var(--font-display); letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance;
+}
+h2 .step-no {
+  display: block; font: 500 12px/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 6px;
+}
+h3 { font: 600 1.12rem/1.3 var(--font-display); margin: 28px 0 8px; text-wrap: balance; }
+p, li { max-width: 72ch; }
+p { margin: 0 0 14px; }
+ol, ul { margin: 0 0 14px; padding-left: 1.4em; }
+li { margin: 4px 0; }
+li > ul { margin: 6px 0 6px; }
+ol > li::marker { font: 500 0.9em var(--font-mono); color: var(--accent); }
+strong { font-weight: 600; }
+
+code {
+  font: 400 0.86em/1.5 var(--font-mono); background: var(--chip-bg); padding: 1px 5px; border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+
+/* Code blocks */
+.code { margin: 6px 0 20px; border-radius: var(--radius); background: var(--code-bg); overflow: hidden; }
+.code-bar {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 6px 8px 6px 14px; border-bottom: 1px solid color-mix(in srgb, var(--code-muted) 25%, transparent);
+  font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--code-muted);
+}
+.copy {
+  font: 500 12px/1 var(--font-body); color: var(--code-fg); background: transparent; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--code-muted) 45%, transparent); border-radius: 5px; padding: 6px 10px;
+}
+.copy:hover { border-color: var(--code-fg); }
+.code pre { margin: 0; padding: 14px 16px; overflow-x: auto; }
+.code pre code {
+  background: none; padding: 0; color: var(--code-fg); font-size: 13px; line-height: 1.6;
+  white-space: pre; overflow-wrap: normal;
+}
+.code[data-lang="text"] pre code { line-height: 1.45; }
+
+/* Tables */
+.table { overflow-x: auto; margin: 6px 0 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+th { font: 600 12px/1.4 var(--font-body); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; overflow-wrap: normal; }
+td .blank { color: var(--muted); }
+
+/* Checklist */
+ul.checklist { list-style: none; padding-left: 0; display: grid; gap: 6px; }
+ul.checklist li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; margin: 0; }
+ul.checklist input { margin: 4px 0 0; width: 16px; height: 16px; accent-color: var(--accent); }
+ul.checklist input:checked + label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+
+@media (max-width: 860px) {
+  .wrap { padding-block: 24px 56px; }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  nav.toc { position: static; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 10px 12px; }
+  nav.toc summary { padding: 4px 0; }
+  nav.toc[open] summary { padding-bottom: 10px; }
+  nav.toc summary::after { content: " ▾"; }
+  nav.toc[open] summary::after { content: " ▴"; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">Device tree toolchain · RisingOS Revived 9.0</div>
+    <h1>Android Device Tree Toolchain Guide <span class="for">for RisingOS Revived 9.0</span></h1>
+    <p class="provenance">RisingOS Revived 9.0 edition, adapted 2026-10-13 from the Evolution X edition (exported 2026-10-10 from the Claude doc "Android Device Tree Toolchain Guide"). Only the ROM source, flags and build commands changed; the dump, generator, cleanup and TWRP steps are the same.</p>
+    <dl class="glance">
+      <div><dt>Manifest</dt><dd><code>RisingOS-Revived/android</code>, branch <code>seventeen</code></dd></div>
+      <div><dt>Base</dt><dd>LineageOS 24.0 · Android 17.0.0_r1</dd></div>
+      <div><dt>Lunch release code</dt><dd><code>cp2a</code>, filled in by <code>riseup</code></dd></div>
+      <div><dt>Build</dt><dd><code>riseup &lt;codename&gt; userdebug</code> then <code>rise b</code></dd></div>
+      <div><dt>Output</dt><dd><code>RisingOS-9-…-COMMUNITY-&lt;codename&gt;-ota.zip</code></dd></div>
+    </dl>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="Guide sections">
+      <details open id="toc-details">
+        <summary>Contents</summary>
+        <ol><li><a href="#brief-for-claude-code"><span class="n"></span><span>Brief for Claude Code</span></a></li><li><a href="#overview"><span class="n"></span><span>Overview</span></a></li><li><a href="#prerequisites"><span class="n"></span><span>Prerequisites</span></a></li><li><a href="#step-1-install-base-host-packages"><span class="n">1</span><span>Install base host packages</span></a></li><li><a href="#step-2-install-dumpyara-aospdtgen-and-twrpdtgen"><span class="n">2</span><span>Install dumpyara, aospdtgen and twrpdtgen</span></a></li><li><a href="#step-3-get-the-stock-firmware-and-dump-it"><span class="n">3</span><span>Get the stock firmware and dump it</span></a></li><li><a href="#step-4-generate-the-lineageos-aosp-device-tree-with-aospdtgen"><span class="n">4</span><span>Generate the LineageOS/AOSP device tree with aospdtgen</span></a></li><li><a href="#step-5-generate-a-twrp-recovery-tree-with-twrpdtgen"><span class="n">5</span><span>Generate a TWRP recovery tree with twrpdtgen</span></a></li><li><a href="#step-6-build-the-vendor-tree-from-proprietary-blobs"><span class="n">6</span><span>Build the vendor tree from proprietary blobs</span></a></li><li><a href="#step-7-clean-up-the-generated-tree"><span class="n">7</span><span>Clean up the generated tree</span></a></li><li><a href="#step-8-test-build-and-flash-safely"><span class="n">8</span><span>Test-build and flash safely</span></a></li><li><a href="#troubleshooting"><span class="n"></span><span>Troubleshooting</span></a></li><li><a href="#quick-reference"><span class="n"></span><span>Quick reference</span></a></li><li><a href="#sources"><span class="n"></span><span>Sources</span></a></li></ol>
+      </details>
+    </nav>
+    <main><section id="brief-for-claude-code"><h2>Brief for Claude Code</h2><p>You are running on the user's Ubuntu/Debian build server. Use this guide to set up the device-tree toolchain and generate device, vendor and (optionally) TWRP trees for a RisingOS Revived 9.0 build.</p><h3>Fill these in before starting (ask if any are unknown):</h3><div class="table"><table><thead><tr><th>Placeholder</th><th>Meaning</th><th>Value</th></tr></thead><tbody><tr><td><code>&lt;codename&gt;</code></td><td>Device codename (<code>adb shell getprop ro.product.device</code>)</td><td><span class="blank">—</span></td></tr><tr><td><code>&lt;vendor&gt;</code></td><td>Manufacturer folder name, lowercase (e.g. <code>xiaomi</code>, <code>google</code>)</td><td><span class="blank">—</span></td></tr><tr><td><code>&lt;firmware-file&gt;</code></td><td>Full stock firmware archive in <code>~/android-dt/firmware/</code></td><td><span class="blank">—</span></td></tr><tr><td><code>&lt;fingerprint&gt;</code></td><td><code>adb shell getprop ro.build.fingerprint</code></td><td><span class="blank">—</span></td></tr></tbody></table></div><h3>Operating rules:</h3><ul class=""><li>Work through Steps 1–8 in order. Mark each step done only after its verification command succeeds; report the output.</li><li>Do not rely on <code>~/.bashrc</code> aliases in non-interactive shells: use <code>source ~/android-dt/.venv/bin/activate</code> instead of <code>dtenv</code>.</li><li>Never run <code>sudo</code> package installs, <code>repo sync</code> of a full ROM (hundreds of GB), or anything that deletes existing folders without confirming with the user first.</li><li>Never flash, <code>fastboot</code> or otherwise write to a phone. Step 8 Part 3 is for the user to do by hand.</li><li>Do not push device or vendor trees to any remote, and never to a public repo (vendor blobs are proprietary).</li><li>Commit to local git after each meaningful change, as the guide describes.</li><li>Release codes (<code>cp2a</code>) and branch names (<code>seventeen</code>) change; check the RisingOS Revived manifest README and <code>vendor/lineage/vars/aosp_target_release</code> before using them.</li></ul></section><section id="overview"><h2>Overview</h2><p>The toolchain turns a phone's stock firmware into a starting-point device tree in three moves: dump the firmware with <strong>dumpyara</strong>, generate a LineageOS/AOSP tree with <strong>aospdtgen</strong> (or a recovery tree with <strong>twrpdtgen</strong>), then hand-tune and test-build. The generators get you roughly 70–80% of the way; the rest is manual cleanup and boot testing.</p><p>An Android "device tree" is not one repo but a set of them that the ROM build system reads:</p><div class="table"><table><thead><tr><th>Repo</th><th>Path in the ROM source</th><th>What it holds</th></tr></thead><tbody><tr><td>Device tree</td><td><code>device/&lt;vendor&gt;/&lt;codename&gt;</code></td><td><code>BoardConfig.mk</code>, <code>device.mk</code>, <code>AndroidProducts.mk</code>, <code>lineage_&lt;codename&gt;.mk</code>, partition sizes, overlays, init <code>.rc</code> files, fstab, sepolicy</td></tr><tr><td>Vendor tree</td><td><code>vendor/&lt;vendor&gt;/&lt;codename&gt;</code></td><td>Proprietary blobs (HALs, firmware, libraries) pulled from the stock ROM by <code>extract-files</code></td></tr><tr><td>Kernel</td><td><code>kernel/&lt;vendor&gt;/&lt;soc&gt;</code> or a prebuilt in the device tree</td><td>Kernel source, or a prebuilt <code>Image</code>/<code>dtb</code>/<code>dtbo</code> copied from stock</td></tr><tr><td>Recovery tree</td><td><code>device/&lt;vendor&gt;/&lt;codename&gt;</code> in a TWRP source</td><td>A separate, smaller tree for building TWRP only</td></tr></tbody></table></div><p>aospdtgen only works on Treble devices (Android 8.0+ with VNDK). Check with <code>adb shell getprop ro.treble.enabled</code>; it should print <code>true</code>.</p><div class="code" data-lang="text"><div class="code-bar"><span>text</span><button type="button" class="copy">Copy</button></div><pre><code>                         Stock firmware
+                  (full OTA or fastboot ROM)
+                 /                          \
+        dumpyara (Step 3)            recovery.img or boot.img
+               |                     (from the ROM, or dumpyara -d)
+        Firmware dump  ------+                  |
+               |             |           twrpdtgen (Step 5)
+        aospdtgen (Step 4)   |                  |
+               |             |           TWRP tree (omni_ names)
+        Device tree          |                  |
+               |             |         * Rename omni_ -&gt; twrp_ (Step 5)
+   extract-files.py (Step 6) &lt;-- reads the dump |
+               |                         TWRP build (Step 8)
+        Vendor tree                      mka recoveryimage
+               |
+      * Clean up by hand (Step 7)
+               |
+      RisingOS build (Step 8)
+      riseup, rise b
+
+  * = hand-edited step; everything else is generated by a tool</code></pre></div><p>The ROM path runs through the dump twice: once for aospdtgen, once for extract-files.py. The TWRP path needs only one image, plus a manual rename.</p></section><section id="prerequisites"><h2>Prerequisites</h2><p>You need a 64-bit Ubuntu/Debian host, your phone's exact codename, and its full stock firmware package. Tree generation itself is light; the test-build in Step 8 is what needs the big machine.</p><div class="table"><table><thead><tr><th>Item</th><th>What to have</th><th>Why</th></tr></thead><tbody><tr><td>Host OS</td><td>Ubuntu LTS (22.04 or 24.04) or Debian 12+, 64-bit</td><td>LineageOS only tests its build docs on Ubuntu LTS; other distros work but you fix package names yourself</td></tr><tr><td>Disk</td><td>~50 GB free for dumping and tree generation; ~300 GB+ (SSD) if you will also sync and build a ROM (approximate)</td><td>A firmware dump unpacks to 3–5× the zip size; a full ROM source tree plus <code>out/</code> is very large</td></tr><tr><td>RAM</td><td>16 GB minimum, 32 GB+ recommended for ROM builds (approximate)</td><td>Soong/Ninja and the Java/Kotlin compile steps are memory hungry; add swap if you are short</td></tr><tr><td>Python</td><td>3.9 or newer (Ubuntu 22.04+ ships this)</td><td>dumpyara and aospdtgen both require 3.9+</td></tr><tr><td>Phone info</td><td>Manufacturer, model, <strong>codename</strong> (<code>adb shell getprop ro.product.device</code>), Android version, A/B or A-only</td><td>Every path and file name in the trees is keyed on the codename</td></tr><tr><td>Firmware</td><td>The full stock firmware/OTA for the <strong>exact</strong> build on your phone (not an incremental OTA)</td><td>Blobs and props must match what is on the device</td></tr><tr><td>Unlocked bootloader</td><td>Only needed when you flash test builds</td><td>Generating trees never touches the phone</td></tr><tr><td>GitHub account + SSH key</td><td>Optional but recommended</td><td>You will want the device and vendor trees under version control from the first run</td></tr></tbody></table></div><p>Keep all of this in one workspace, for example <code>~/android-dt/</code> with <code>firmware/</code>, <code>dumps/</code> and <code>trees/</code> folders, so nothing ends up scattered across your home directory.</p></section><section id="step-1-install-base-host-packages"><h2><span class="step-no">Step 1</span>Install base host packages</h2><p>One <code>apt</code> command covers the extraction tools the Python generators shell out to (7-Zip, EROFS, LZ4, cpio), plus Python and git.</p><ol start="1"><li>Update and install the base packages:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>sudo apt update &amp;&amp; sudo apt full-upgrade -y
+sudo apt install -y \
+  git git-lfs curl wget unzip zip \
+  python3 python3-pip python3-venv python3-dev \
+  p7zip-full erofs-utils lz4 brotli cpio \
+  android-sdk-libsparse-utils xxd file</code></pre></div><ol start="2"><li>Confirm Python is 3.9 or newer:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>python3 --version</code></pre></div><ol start="3"><li>Install the latest <code>adb</code>/<code>fastboot</code> from Google's platform-tools (the distro packages are often stale):</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>mkdir -p ~/bin &amp;&amp; cd ~/bin
+curl -LO https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+unzip -o platform-tools-latest-linux.zip
+echo &#x27;export PATH=&quot;$HOME/bin/platform-tools:$HOME/bin:$PATH&quot;&#x27; &gt;&gt; ~/.bashrc
+source ~/.bashrc
+adb --version</code></pre></div><ol start="4"><li>Set your git identity once, since you will commit the trees:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>git config --global user.name &quot;Your Name&quot;
+git config --global user.email &quot;you@example.com&quot;
+git lfs install</code></pre></div><ol start="5"><li>Create the workspace:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>mkdir -p ~/android-dt/{firmware,dumps,trees}</code></pre></div><p>If <code>erofs-utils</code> is missing on an older release, dumpyara cannot unpack EROFS partitions, which most Android 13+ phones use. Upgrade the distro or build erofs-utils from source before continuing.</p></section><section id="step-2-install-dumpyara-aospdtgen-and-twrpdtgen"><h2><span class="step-no">Step 2</span>Install dumpyara, aospdtgen and twrpdtgen</h2><p>Install all three generators from PyPI into one virtual environment. Ubuntu 23.04+ and Debian 12+ block system-wide <code>pip install</code> (PEP 668), and a venv keeps the tools from fighting your system Python anyway.</p><ol start="1"><li>Create and activate the venv:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>python3 -m venv ~/android-dt/.venv
+source ~/android-dt/.venv/bin/activate
+python -m pip install --upgrade pip wheel</code></pre></div><ol start="2"><li>Install the tools:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>pip install dumpyara aospdtgen twrpdtgen</code></pre></div><ol start="3"><li>Verify each one runs:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>python -m dumpyara --help
+python -m aospdtgen --help
+python -m twrpdtgen --help</code></pre></div><ol start="4"><li>Optional: add an alias so the venv is one word away in new shells:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>echo &quot;alias dtenv=&#x27;source ~/android-dt/.venv/bin/activate&#x27;&quot; &gt;&gt; ~/.bashrc</code></pre></div><p>To pick up upstream fixes later, run <code>pip install --upgrade dumpyara aospdtgen twrpdtgen</code> inside the venv. If PyPI lags behind a fix you need, install straight from the repo instead, for example <code>pip install git+https://github.com/sebaubuntu-python/aospdtgen</code>.</p><div class="table"><table><thead><tr><th>Tool</th><th>Input</th><th>Output</th><th>Notes</th></tr></thead><tbody><tr><td><a href="https://github.com/sebaubuntu-python/dumpyara" target="_blank" rel="noopener">dumpyara</a></td><td>Stock firmware archive or OTA</td><td>A folder of unpacked partitions</td><td>Handles payload.bin, super.img, sparse, LZ4, EROFS, Samsung <code>.tar.md5</code>, LG <code>.kdz</code></td></tr><tr><td><a href="https://github.com/sebaubuntu-python/aospdtgen" target="_blank" rel="noopener">aospdtgen</a></td><td>A dumpyara dump folder</td><td>LineageOS-style device tree + <code>proprietary-files.txt</code></td><td>Treble devices only (Android 8.0+ with VNDK)</td></tr><tr><td><a href="https://github.com/twrpdtgen/twrpdtgen" target="_blank" rel="noopener">twrpdtgen</a></td><td>One <code>recovery.img</code>, or <code>boot.img</code> on A/B devices without a recovery partition</td><td>TWRP device tree</td><td>Confirmed up to Android 12 images; needs <code>cpio</code></td></tr></tbody></table></div></section><section id="step-3-get-the-stock-firmware-and-dump-it"><h2><span class="step-no">Step 3</span>Get the stock firmware and dump it</h2><p>Dump the full stock firmware for the exact build on your phone; everything after this step reads from the dump folder.</p><ol start="1"><li>Find your build so you download the matching firmware:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>adb shell getprop ro.product.device        # codename
+adb shell getprop ro.build.fingerprint     # exact build
+adb shell getprop ro.treble.enabled        # must be true for aospdtgen
+adb shell getprop ro.boot.slot_suffix      # non-empty = A/B device</code></pre></div><ol start="2"><li>Download the full firmware into <code>~/android-dt/firmware/</code>. Typical sources:<ul><li>Pixel: Google's factory images or full OTA images</li><li>Xiaomi/Redmi/POCO: the official fastboot ROM</li><li>Samsung: the full 4-file firmware (<code>.tar.md5</code> set) for your exact model and region</li><li>OnePlus/Oppo/Realme: the full OTA zip containing <code>payload.bin</code></li><li>Others: the OEM support site, or a community dump mirror if the OEM does not publish images</li></ul></li><li>Run dumpyara from the venv. By default it writes the dump into a folder named after the firmware file in your current directory; <code>-o</code> picks the location instead:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>dtenv
+cd ~/android-dt/dumps
+python -m dumpyara ~/android-dt/firmware/&lt;firmware-file&gt;.zip -o ~/android-dt/dumps/&lt;codename&gt;</code></pre></div><p>Add <code>-v</code> for verbose logs if anything fails. Expect it to take several minutes and use 3–5× the archive size on disk.</p><ol start="4"><li>Check the dump. You should see one folder per partition, roughly:</li></ol><div class="code" data-lang="text"><div class="code-bar"><span>text</span><button type="button" class="copy">Copy</button></div><pre><code>&lt;codename&gt;/
+  boot/            kernel, ramdisk, dtb from boot.img
+  vendor_boot/     on GKI devices: vendor ramdisk, dtb, recovery ramdisk on some
+  recovery/        only on devices with a recovery partition
+  dtbo/            device tree overlays
+  system/          system/build.prop, apps, framework
+  system_ext/
+  product/
+  vendor/          vendor/build.prop, HALs, firmware, init .rc files
+  odm/</code></pre></div><p>Confirm <code>system/build.prop</code> and <code>vendor/build.prop</code> exist. If a partition folder is empty, the image format was not recognised; see Troubleshooting.</p><p>dumpyara also writes <code>all_files.txt</code>, a sorted list of every file in the dump; <code>grep</code> it to find blobs fast. Before starting it checks for <code>7z</code>, <code>fsck.erofs</code> and <code>simg2img</code>, and stops with a "You are missing…" error if any is absent (all three come from the Step 1 packages).</p><ol start="5"><li>Initialise the dump as a local git repo. It makes later blob diffs against a newer firmware trivial:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>cd ~/android-dt/dumps/&lt;codename&gt;
+git init &amp;&amp; git add -A &amp;&amp; git commit -qm &quot;Stock dump: &lt;fingerprint&gt;&quot;</code></pre></div></section><section id="step-4-generate-the-lineageos-aosp-device-tree-with-aospdtgen"><h2><span class="step-no">Step 4</span>Generate the LineageOS/AOSP device tree with aospdtgen</h2><p>Point aospdtgen at the dump folder and give it an output path; one command produces the whole <code>device/&lt;vendor&gt;/&lt;codename&gt;</code> skeleton plus the blob list.</p><ol start="1"><li>Run the generator (always pass <code>-o</code>; without it the tree lands in <code>./output</code> under whatever directory you happen to be in):</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>dtenv
+python -m aospdtgen ~/android-dt/dumps/&lt;codename&gt; \
+  -o ~/android-dt/trees/device_&lt;vendor&gt;_&lt;codename&gt;</code></pre></div><p>Add <code>--no-proprietary-files</code> only if you plan to write the blob list by hand.</p><p>The output folder must not exist yet; aospdtgen creates it and stops with an error if it is already there. Delete or rename the old folder before re-running.</p><ol start="2"><li>Review what it produced. With aospdtgen 1.2.x the tree looks like this:</li></ol><div class="table"><table><thead><tr><th>File</th><th>Purpose</th><th>What you usually change</th></tr></thead><tbody><tr><td><code>AndroidProducts.mk</code></td><td>Registers the <code>lineage_&lt;codename&gt;</code> product and lunch targets</td><td>Rarely</td></tr><tr><td><code>lineage_&lt;codename&gt;.mk</code></td><td>Product makefile: inherits AOSP/Lineage common configs and <code>device.mk</code></td><td>Product name, brand, model, fingerprint props; RisingOS flags (Step 8)</td></tr><tr><td><code>device.mk</code></td><td>Packages, HALs, overlays, init files and props copied into the build</td><td>Most of your HAL and package work happens here</td></tr><tr><td><code>BoardConfig.mk</code></td><td>Architecture, kernel, partition sizes, AVB, recovery, sepolicy dirs</td><td>Partition sizes, kernel source vs prebuilt, AVB flags</td></tr><tr><td><code>Android.bp</code> / <code>Android.mk</code></td><td>Soong namespace and guard so the tree only builds for this device</td><td>Rarely</td></tr><tr><td><code>rootdir/</code></td><td><code>bin/</code> and <code>etc/</code>: init <code>.rc</code> scripts, shell scripts and the generated fstab, copied from stock vendor and recovery</td><td>fstab flags, removing OEM-only services</td></tr><tr><td><code>manifest.xml</code></td><td>VINTF HAL manifest from the stock vendor partition</td><td>Remove HALs you do not ship</td></tr><tr><td><code>prebuilts/</code></td><td>Stock kernel <code>Image</code>, <code>dtb</code> and <code>dtbo</code> when the tree uses a prebuilt kernel</td><td>Replace with kernel source later if you want</td></tr><tr><td><code>proprietary-files.txt</code></td><td>List of blobs to pull from the stock ROM into the vendor tree</td><td>Trim and annotate (Step 6)</td></tr><tr><td><code>extract-files.py</code> / <code>setup-makefiles.py</code></td><td>LineageOS extract-utils scripts that build <code>vendor/&lt;vendor&gt;/&lt;codename&gt;</code></td><td>Nothing; they run from inside a Lineage-based source tree</td></tr><tr><td><code>README.md</code>, <code>LICENSE</code></td><td>Boilerplate</td><td>Fill in device specs</td></tr></tbody></table></div><ol start="3"><li>Put it under git before touching anything, so every manual fix is a reviewable diff against the generator output:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>cd ~/android-dt/trees/device_&lt;vendor&gt;_&lt;codename&gt;
+git init &amp;&amp; git add -A &amp;&amp; git commit -qm &quot;Initial tree from aospdtgen 1.2.x&quot;</code></pre></div><p>The <code>extract-files.py</code> and <code>setup-makefiles.py</code> scripts import LineageOS's <code>tools/extract-utils</code>, so they will not run from <code>~/android-dt</code>. You run them after the tree is placed inside your synced RisingOS source, which carries the same extract-utils (Step 6).</p></section><section id="step-5-generate-a-twrp-recovery-tree-with-twrpdtgen"><h2><span class="step-no">Step 5</span>Generate a TWRP recovery tree with twrpdtgen</h2><p>twrpdtgen builds a recovery-only tree from a single image, but its output still uses the retired OmniROM naming, so you must rename three things before it will build on the current TWRP manifest.</p><ol start="1"><li>Pick the right input image from the dump:</li></ol><div class="table"><table><thead><tr><th>Device layout</th><th>Image to feed twrpdtgen</th></tr></thead><tbody><tr><td>Has a dedicated recovery partition</td><td><code>recovery.img</code></td></tr><tr><td>A/B with recovery inside boot, no vendor_boot</td><td><code>boot.img</code></td></tr><tr><td>GKI device (launched with Android 12+) whose recovery ramdisk sits in <code>vendor_boot</code></td><td>Not supported well; start from a published TWRP tree for a device on the same SoC instead</td></tr></tbody></table></div><p>twrpdtgen is confirmed for images from Android 4.4 through Android 12. Newer images may still work, but check every generated value.</p><ol start="2"><li>Run it. <code>--git</code> commits the result for you; default output is <code>./output/&lt;manufacturer&gt;/&lt;codename&gt;</code>:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>dtenv
+python -m twrpdtgen ~/android-dt/firmware/recovery.img \
+  -o ~/android-dt/trees/twrp --git</code></pre></div><p>Fastboot ROMs ship the raw <code>recovery.img</code>/<code>boot.img</code>. For OTA-only firmware, re-run dumpyara with <code>-d</code>: debug mode keeps its <code>temp_raw_images/</code> folder, which holds every partition image unpacked from <code>payload.bin</code> (normally it deletes that folder when it finishes).</p><ol start="3"><li>Convert the Omni naming to TWRP naming (the twrp-12.1 manifest requires the <code>twrp</code> prefix):</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>cd ~/android-dt/trees/twrp/&lt;manufacturer&gt;/&lt;codename&gt;
+git mv omni_&lt;codename&gt;.mk twrp_&lt;codename&gt;.mk
+sed -i &#x27;s/omni_/twrp_/g&#x27; twrp_&lt;codename&gt;.mk AndroidProducts.mk vendorsetup.sh
+sed -i &#x27;s#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#&#x27; twrp_&lt;codename&gt;.mk
+git commit -qam &quot;Rename Omni product to TWRP&quot;</code></pre></div><ol start="4"><li>Check <code>BoardConfig.mk</code> by hand before the first build: <code>TARGET_ARCH</code>, <code>BOARD_KERNEL_CMDLINE</code>, <code>BOARD_*_PARTITION_SIZE</code>, <code>TW_THEME</code> (<code>portrait_hdpi</code> for most phones), and <code>BOARD_USES_RECOVERY_AS_BOOT</code> on A/B devices.</li></ol><p>The TWRP tree goes in <code>device/&lt;manufacturer&gt;/&lt;codename&gt;</code> inside a TWRP source checkout, not inside your RisingOS source. Keep it in its own git repo, separate from the ROM tree.</p></section><section id="step-6-build-the-vendor-tree-from-proprietary-blobs"><h2><span class="step-no">Step 6</span>Build the vendor tree from proprietary blobs</h2><p>The vendor tree is generated, not written: trim <code>proprietary-files.txt</code>, then let LineageOS's extract-utils copy those blobs out of your dump into <code>vendor/&lt;vendor&gt;/&lt;codename&gt;</code>. This step runs inside your synced RisingOS source (set up in Step 8, part 1), because the scripts import <code>tools/extract-utils</code>.</p><ol start="1"><li>Trim the generated list. aospdtgen is generous; remove anything the ROM already builds from source or that you will never ship:<ul><li>OEM apps, overlays and analytics (<code>priv-app/</code>, <code>app/</code>, OEM <code>framework/</code> jars) unless a HAL depends on them</li><li>Duplicates of AOSP HALs that Lineage provides</li><li>Keep: camera, audio, display, sensors, fingerprint, RIL/IMS, Wi-Fi/Bluetooth firmware, DSP/firmware (<code>vendor/firmware</code>, <code>vendor/lib*/</code>, <code>vendor/etc/</code>)</li></ul></li></ol><p>Useful markers in the list: a leading <code>-</code> builds the blob as a prebuilt module instead of a plain copy, and <code>|&lt;sha1&gt;</code> pins a blob to a known hash so later re-extractions catch silent changes.</p><ol start="2"><li>Place the device tree in the ROM source and run the extractor against your dump folder:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>cd ~/android/rising
+mkdir -p device/&lt;vendor&gt;
+cp -r ~/android-dt/trees/device_&lt;vendor&gt;_&lt;codename&gt; device/&lt;vendor&gt;/&lt;codename&gt;
+cd device/&lt;vendor&gt;/&lt;codename&gt;
+./extract-files.py ~/android-dt/dumps/&lt;codename&gt;</code></pre></div><p>With no argument it pulls over <code>adb</code> from a connected, rooted device instead; the dump folder is more reproducible.</p><ol start="3"><li>Regenerate just the makefiles after editing the list, without re-copying blobs:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>./setup-makefiles.py
+# or: ./extract-files.py -m ~/android-dt/dumps/&lt;codename&gt;</code></pre></div><p>Other options worth knowing: <code>-k</code> (kang) recomputes the pinned hashes after you swap a blob in on purpose, <code>-s &lt;pattern&gt;</code> re-extracts one section only, and <code>-n</code> skips wiping the vendor tree first.</p><ol start="4"><li>Commit the vendor tree to its own repo (<code>vendor_&lt;vendor&gt;_&lt;codename&gt;</code>). Blobs are large; enable Git LFS for <code>*.so</code>, <code>*.apk</code> and firmware files, or keep the repo private.</li></ol><p>Proprietary blobs are copyrighted by the OEM and SoC vendors. Publishing them is common practice in the custom-ROM community but not licensed; keep that in mind before pushing a vendor tree to a public repo.</p></section><section id="step-7-clean-up-the-generated-tree"><h2><span class="step-no">Step 7</span>Clean up the generated tree</h2><p>The generator guesses from the dump; this pass replaces guesses with values read off the real device. Work through it as a checklist and commit after each item so a broken build points at one change.</p><p>Read live values from the phone first; they beat anything inferred from images:</p><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>adb shell getprop | grep -E &#x27;ro.product|ro.build|ro.boot|dynamic_partitions|ro.vendor.api_level&#x27;
+adb shell ls -l /dev/block/by-name/            # partition names
+adb shell cat /proc/cmdline                    # needs root on most devices
+adb shell lpdump                               # super partition groups and sizes (root)</code></pre></div><h3>BoardConfig.mk</h3><ul class="checklist"><li><input type="checkbox" id="chk-1"><label for="chk-1"><code>TARGET_ARCH</code>, <code>TARGET_CPU_VARIANT</code>, <code>TARGET_BOARD_PLATFORM</code> match the SoC</label></li><li><input type="checkbox" id="chk-2"><label for="chk-2">Partition sizes: <code>BOARD_BOOTIMAGE_PARTITION_SIZE</code>, <code>BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE</code>, <code>BOARD_DTBOIMG_PARTITION_SIZE</code> in bytes, from <code>by-name</code> block sizes</label></li><li><input type="checkbox" id="chk-3"><label for="chk-3">Dynamic partitions: <code>BOARD_SUPER_PARTITION_SIZE</code>, the group name, <code>BOARD_&lt;GROUP&gt;_SIZE</code> (super size minus 4 MiB is the usual ceiling) and <code>BOARD_&lt;GROUP&gt;_PARTITION_LIST</code>, all from <code>lpdump</code></label></li><li><input type="checkbox" id="chk-4"><label for="chk-4">Filesystem types for system/vendor/product/odm (<code>erofs</code> or <code>ext4</code>) match stock</label></li><li><input type="checkbox" id="chk-5"><label for="chk-5"><code>BOARD_BOOT_HEADER_VERSION</code> and kernel cmdline/base/pagesize match the stock boot image header</label></li><li><input type="checkbox" id="chk-6"><label for="chk-6">AVB: keep <code>BOARD_AVB_ENABLE := true</code>; flash a vbmeta with verification disabled during bring-up rather than stripping AVB from the tree</label></li></ul><h3>Kernel</h3><ul class="checklist"><li><input type="checkbox" id="chk-7"><label for="chk-7">Decide prebuilt vs source. Start with the stock prebuilt <code>Image</code>/<code>dtb</code>/<code>dtbo</code> in <code>prebuilts/</code> (<code>TARGET_PREBUILT_KERNEL</code>, <code>BOARD_PREBUILT_DTBIMAGE_DIR</code>, <code>BOARD_PREBUILT_DTBOIMAGE</code>) to get a first boot</label></li><li><input type="checkbox" id="chk-8"><label for="chk-8">Move to source later with <code>TARGET_KERNEL_SOURCE</code> and <code>TARGET_KERNEL_CONFIG</code> once the OEM's GPL kernel release is available</label></li><li><input type="checkbox" id="chk-9"><label for="chk-9">GKI devices: ship the stock <code>vendor_boot</code> and <code>vendor_dlkm</code> modules that match the prebuilt kernel exactly</label></li></ul><h3>device.mk, rootdir and props</h3><ul class="checklist"><li><input type="checkbox" id="chk-10"><label for="chk-10"><code>rootdir/etc/fstab.*</code>: mount flags, <code>first_stage_mount</code>, <code>avb=</code> keys and the encryption option match stock</label></li><li><input type="checkbox" id="chk-11"><label for="chk-11">Remove OEM-only init services from <code>rootdir/etc/*.rc</code> that start binaries you did not extract</label></li><li><input type="checkbox" id="chk-12"><label for="chk-12">Move props into <code>system.prop</code>, <code>vendor.prop</code> and <code>product.prop</code> (or <code>TARGET_*_PROP</code> files); drop OEM tracking props</label></li><li><input type="checkbox" id="chk-13"><label for="chk-13">Overlays: rounded corners, cutout, brightness ranges and status-bar height in <code>overlay/</code> or RRO packages</label></li></ul><h3>VINTF and SELinux</h3><ul class="checklist"><li><input type="checkbox" id="chk-14"><label for="chk-14"><code>manifest.xml</code>: keep only HALs you ship; every listed HAL must have its blob or a built package</label></li><li><input type="checkbox" id="chk-15"><label for="chk-15">Add a <code>compatibility_matrix.xml</code> if the vendor manifest needs framework HALs Lineage does not list</label></li><li><input type="checkbox" id="chk-16"><label for="chk-16">SELinux: copy the vendor policy into <code>sepolicy/vendor</code> and point <code>BOARD_VENDOR_SEPOLICY_DIRS</code> at it. Permissive boots are fine for the first bring-up only; ship enforcing</label></li></ul><p>When every box is ticked, tag the commit (<code>git tag bringup-1</code>) so you can always return to the first known-good state.</p></section><section id="step-8-test-build-and-flash-safely"><h2><span class="step-no">Step 8</span>Test-build and flash safely</h2><p>A tree is only proven by a build that boots. Sync a ROM (or TWRP) source once, drop your trees in, build, and test with temporary boots before you flash anything permanently.</p><h3>Part 1 — RisingOS Revived source (also needed for Step 6)</h3><p>RisingOS Revived 9.0 (codename elefthería) is built on LineageOS 24.0 (Android 17, <code>android-17.0.0_r1</code>), so your aospdtgen tree drops in as-is: it keeps the <code>lineage_&lt;codename&gt;</code> product name, the <code>vendor/lineage/config/common_full_phone.mk</code> inherit and Lineage's <code>tools/extract-utils</code>. Only the branch, flags and build commands differ.</p><ol start="1"><li>Install the ROM build packages (LineageOS's list for current Ubuntu LTS, which RisingOS shares):</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>sudo apt install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+  git git-lfs gnupg gperf imagemagick protobuf-compiler python3-protobuf \
+  lib32readline-dev lib32z1-dev libdw-dev libelf-dev libgnutls28-dev lz4 \
+  libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync \
+  schedtool squashfs-tools xsltproc zip zlib1g-dev</code></pre></div><ol start="2"><li>Install <code>repo</code>, enable ccache, and sync the RisingOS Revived 9.0 branch (<code>seventeen</code> in the manifest README at the time of writing; check the <a href="https://github.com/RisingOS-Revived/android" target="_blank" rel="noopener">manifest</a> before syncing):</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>curl https://storage.googleapis.com/git-repo-downloads/repo &gt; ~/bin/repo &amp;&amp; chmod a+x ~/bin/repo
+echo &#x27;export USE_CCACHE=1 CCACHE_EXEC=/usr/bin/ccache&#x27; &gt;&gt; ~/.bashrc &amp;&amp; source ~/.bashrc
+ccache -M 50G
+mkdir -p ~/android/rising &amp;&amp; cd ~/android/rising
+repo init -u https://github.com/RisingOS-Revived/android -b seventeen --git-lfs
+repo sync -c --no-clone-bundle --optimized-fetch --prune --force-sync -j$(nproc --all)</code></pre></div><p>The other branches on that manifest are older releases (<code>fifteen</code>, <code>sixteen</code>, <code>qpr2</code>, <code>sixteen-qpr2</code>); <code>seventeen</code> is the one whose <code>vendor/rising/config/version.mk</code> sets <code>RISING_VERSION := 9</code>.</p><ol start="3"><li>Add your trees at <code>device/&lt;vendor&gt;/&lt;codename&gt;</code> and <code>vendor/&lt;vendor&gt;/&lt;codename&gt;</code> (Step 6 creates the vendor one). For the long run, list both in <code>.repo/local_manifests/&lt;codename&gt;.xml</code> pointing at your GitHub repos so <code>repo sync</code> keeps them.</li><li>Add the RisingOS flags to <code>lineage_&lt;codename&gt;.mk</code>. Keep comments on their own lines: in a makefile, <code>VAR := true   # note</code> stores the trailing spaces as part of the value, and <code>ifeq ($(VAR),true)</code> then fails.</li></ol><div class="code" data-lang="makefile"><div class="code-bar"><span>makefile</span><button type="button" class="copy">Copy</button></div><pre><code># RisingOS
+# Maintainer name in the lunch banner; also checked against the official maintainers list
+RISING_MAINTAINER := &lt;your-name&gt;
+# ro.rising.chipset / ro.rising.maintainer (skip if init_&lt;codename&gt;.cpp sets them)
+PRODUCT_BUILD_PROP_OVERRIDES += \
+    RisingChipset=&quot;&lt;SoC name&gt;&quot; \
+    RisingMaintainer=&quot;&lt;your-name&gt;&quot;
+
+# GApps: true ships full GApps (GAPPS build); false for a vanilla build
+WITH_GMS := true
+# With WITH_GMS := true, ship the smaller core GApps set instead (CORE build)
+#TARGET_USES_PICO_GAPPS := true
+# With WITH_GMS := false, add microG (MICROG build)
+#WITH_MICROG := true
+
+# Under-display fingerprint (adds the UDFPS animations and icons)
+TARGET_HAS_UDFPS := true
+# Blur, false by default; leave false on weak GPUs
+TARGET_ENABLE_BLUR := true
+# true drops the bundled Aperture camera
+PRODUCT_NO_CAMERA := false</code></pre></div><p>Evolution X flags from an existing tree map like this: <code>WITH_GMS</code>, <code>TARGET_HAS_UDFPS</code> and <code>TARGET_ENABLE_BLUR</code> carry over unchanged; <code>TARGET_USES_MINI_GAPPS</code> becomes <code>TARGET_USES_PICO_GAPPS</code>; <code>TARGET_INCLUDE_BOOT_ANIMATIONS</code> and <code>TARGET_DISABLE_EPPE</code> do nothing here and can go (<code>vendor/rising</code> already sets <code>PRODUCT_ENFORCE_PACKAGES_EXIST := false</code>).</p><p>There is no <code>EVO_BUILD_TYPE</code> equivalent. RisingOS sets the build type itself: <code>OFFICIAL</code> only for devices and maintainers listed in <code>vendor/official_devices</code>, <code>UNOFFICIAL</code> for a listed device with an unlisted maintainer, and <code>COMMUNITY</code> for everything else, which is what a new port gets.</p><ol start="5"><li>Build. <code>riseup</code> is RisingOS's wrapper around <code>lunch lineage_&lt;codename&gt;-&lt;release&gt;-&lt;variant&gt;</code>; it reads the release code from <code>vendor/lineage/vars/aosp_target_release</code> (currently <code>cp2a</code>), so you never type it. <code>rise b</code> runs <code>m installclean</code> and then <code>m bacon</code> on all cores:</li></ol><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>. build/envsetup.sh
+riseup &lt;codename&gt; userdebug   # = lunch lineage_&lt;codename&gt;-cp2a-userdebug; user for releases
+rise b
+# quicker iterations (skip rise, which always runs installclean first):
+# m bootimage vendorbootimage dtboimage</code></pre></div><p>Other <code>rise</code> modes: <code>rise fb</code> builds a fastboot update package, and <code>gk -s</code> followed by <code>rise b</code> signs with your own release keys instead of the test keys (<code>rise help</code> and <code>gk -h</code> list the rest). Output lands in <code>out/target/product/&lt;codename&gt;/</code>: the flashable <code>RisingOS-9-&lt;date&gt;-&lt;GAPPS|CORE|VANILLA|MICROG&gt;-COMMUNITY-&lt;codename&gt;-ota.zip</code> with its <code>.sha256sum</code>, plus <code>boot.img</code>, <code>vendor_boot.img</code>, <code>dtbo.img</code>.</p><h3>Part 2 — TWRP source (only for the recovery tree)</h3><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code>mkdir -p ~/android/twrp &amp;&amp; cd ~/android/twrp
+repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
+repo sync -j$(nproc)
+# copy the Step 5 tree to device/&lt;manufacturer&gt;/&lt;codename&gt;
+export ALLOW_MISSING_DEPENDENCIES=true
+source build/envsetup.sh &amp;&amp; lunch twrp_&lt;codename&gt;-eng
+mka recoveryimage       # or: mka bootimage / mka vendorbootimage, matching where stock recovery lives</code></pre></div><h3>Part 3 — Flash and test (the user does this by hand)</h3><ol start="1"><li>Back up first: copy stock <code>boot</code>, <code>vendor_boot</code>, <code>dtbo</code>, <code>vbmeta</code> and <code>recovery</code> images from the firmware into a safe folder, and keep the full stock firmware for a clean restore.</li><li>Test without writing when the device allows it: <code>fastboot boot out/target/product/&lt;codename&gt;/recovery.img</code> (or <code>boot.img</code>). Many newer devices refuse <code>fastboot boot</code>; then flash only the inactive A/B slot.</li><li>Flash the ROM through the recovery built alongside it (RisingOS builds Lineage-based recovery): flash its <code>boot</code>/<code>vendor_boot</code>/<code>dtbo</code>, reboot to recovery, factory reset, then <code>adb sideload RisingOS-9-*-ota.zip</code>.</li><li>Capture logs on every failed boot: <code>adb logcat -b all &gt; logcat.txt</code>, <code>adb shell dmesg &gt; dmesg.txt</code>, and <code>adb shell cat /sys/fs/pstore/console-ramoops*</code> after a reboot loop.</li></ol><p>Never flash a test build to a device you cannot restore. Keep the stock firmware and a working fastboot path before every flash.</p></section><section id="troubleshooting"><h2>Troubleshooting</h2><p>Most failures trace back to a missing host tool, the wrong firmware, or a value the generator guessed wrong. Find the symptom, apply the fix, re-run only the failed step.</p><div class="table"><table><thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead><tbody><tr><td><code>error: externally-managed-environment</code> on <code>pip install</code></td><td>PEP 668 on Ubuntu 23.04+ / Debian 12+</td><td>Activate the venv first (<code>dtenv</code>); never use <code>--break-system-packages</code> for this</td></tr><tr><td>dumpyara: <code>You are missing 7z</code> / <code>fsck.erofs</code> / <code>simg2img</code></td><td>Host package not installed</td><td><code>sudo apt install p7zip-full erofs-utils android-sdk-libsparse-utils</code></td></tr><tr><td>dumpyara: <code>System folder doesn&#x27;t exist</code> or <code>is empty</code></td><td>Incremental OTA, wrong archive, or unsupported image format</td><td>Use the full firmware, not an incremental; re-run with <code>-v -d</code> and inspect <code>temp_raw_images/</code></td></tr><tr><td>A partition folder is empty but others are fine</td><td>Newer EROFS features than your <code>erofs-utils</code> supports</td><td>Install a newer <code>erofs-utils</code> (build from source on older distros)</td></tr><tr><td>aospdtgen: <code>FileExistsError</code></td><td>Output folder already exists</td><td>Delete or rename it, then re-run</td></tr><tr><td>aospdtgen fails reading props</td><td>Non-Treble firmware, or the dump is missing <code>vendor/</code></td><td>Check <code>ro.treble.enabled</code>; for pre-Treble devices use twrpdtgen and hand-write the ROM tree</td></tr><tr><td>twrpdtgen: <code>cpio</code> errors</td><td><code>cpio</code> missing</td><td><code>sudo apt install cpio</code></td></tr><tr><td><code>lunch</code>: <code>Can&#x27;t find omni_&lt;codename&gt;</code> or product not found</td><td>twrpdtgen's Omni naming on the twrp-12.1 manifest</td><td>Apply the rename in Step 5, part 3</td></tr><tr><td><code>extract-files.py</code>: <code>ModuleNotFoundError: extract_utils</code></td><td>Run outside a synced Lineage-based source</td><td>Run it from <code>device/&lt;vendor&gt;/&lt;codename&gt;</code> inside <code>~/android/rising</code></td></tr><tr><td><code>riseup: command not found</code></td><td><code>build/envsetup.sh</code> not sourced, or sourced from another directory</td><td><code>cd ~/android/rising &amp;&amp; . build/envsetup.sh</code> in a bash shell</td></tr><tr><td><code>riseup</code>/<code>lunch</code>: invalid release or product not found</td><td>Stale release code after a sync, or the tree is not at <code>device/&lt;vendor&gt;/&lt;codename&gt;</code></td><td>Check <code>vendor/lineage/vars/aosp_target_release</code> and the <code>lineage_&lt;codename&gt;</code> entry in <code>AndroidProducts.mk</code></td></tr><tr><td>Build: <code>ninja: error: ... missing and no known rule to make it</code></td><td>A file in <code>proprietary-files.txt</code> or <code>device.mk</code> is absent from the dump</td><td>Remove or correct that line, run <code>./setup-makefiles.py</code>, rebuild</td></tr><tr><td>Build: VINTF check fails</td><td><code>manifest.xml</code> lists a HAL you did not ship</td><td>Remove the HAL entry or extract its blobs</td></tr><tr><td>Build runs out of memory or the host freezes</td><td>Too many jobs for available RAM</td><td>Lower <code>-j</code>, add 16–32 GB of swap, or build with <code>m -j$(( $(nproc) / 2 ))</code></td></tr><tr><td>Boots to fastboot or loops on the logo</td><td>Wrong partition sizes, AVB/vbmeta mismatch, or kernel/module mismatch</td><td>Check <code>pstore</code> logs; re-flash vbmeta with verification disabled; make sure prebuilt kernel and <code>vendor_dlkm</code> modules came from the same firmware</td></tr><tr><td>Boots but no Wi-Fi, camera or RIL</td><td>Missing blobs, wrong SELinux labels, or init services not starting</td><td>Save a logcat (<code>adb logcat -d &gt; log.txt</code>) and grep it for <code>avc</code>, <code>denied</code> and <code>hal</code>; add blobs and sepolicy rules one HAL at a time</td></tr></tbody></table></div></section><section id="quick-reference"><h2>Quick reference</h2><p>The whole pipeline for one device, start to finish, assuming the Step 1–2 setup is done:</p><div class="code" data-lang="shell"><div class="code-bar"><span>shell</span><button type="button" class="copy">Copy</button></div><pre><code># 0. tools
+source ~/android-dt/.venv/bin/activate
+
+# 1. dump firmware
+python -m dumpyara ~/android-dt/firmware/&lt;firmware&gt;.zip -o ~/android-dt/dumps/&lt;codename&gt;
+
+# 2. ROM device tree
+python -m aospdtgen ~/android-dt/dumps/&lt;codename&gt; -o ~/android-dt/trees/device_&lt;vendor&gt;_&lt;codename&gt;
+
+# 3. TWRP tree (optional), then rename omni_ -&gt; twrp_
+python -m twrpdtgen ~/android-dt/firmware/recovery.img -o ~/android-dt/trees/twrp --git
+
+# 4. vendor tree (inside RisingOS source)
+cd ~/android/rising/device/&lt;vendor&gt;/&lt;codename&gt; &amp;&amp; ./extract-files.py ~/android-dt/dumps/&lt;codename&gt;
+
+# 5. build
+cd ~/android/rising &amp;&amp; . build/envsetup.sh &amp;&amp; riseup &lt;codename&gt; userdebug &amp;&amp; rise b</code></pre></div><p>Versions checked for this guide: dumpyara 1.0.10, aospdtgen 1.2.1, twrpdtgen 3.0.0 (PyPI), RisingOS Revived manifest branch seventeen (RisingOS 9, LineageOS 24.0, Android 17.0.0_r1, release code cp2a; checked 2026-10-13), TWRP minimal manifest twrp-12.1.</p></section><section id="sources"><h2>Sources</h2><ul class=""><li><a href="https://github.com/RisingOS-Revived/android/tree/seventeen" target="_blank" rel="noopener">RisingOS Revived manifest</a> — branch, repo init/sync, build flags, <code>riseup</code>/<code>rise</code>/<code>gk</code></li><li><a href="https://github.com/RisingOS-Revived/android_vendor_rising/blob/seventeen/config/version.mk" target="_blank" rel="noopener">RisingOS version config</a> — <code>RISING_VERSION := 9</code>, package and build types, output file name</li><li><a href="https://github.com/RisingOS-Revived/android_build/blob/seventeen/envsetup.sh" target="_blank" rel="noopener">RisingOS envsetup</a> — what <code>riseup</code> and <code>rise</code> actually run</li><li><a href="https://github.com/RisingOS-Revived/android_vendor_lineage/blob/seventeen/vars/aosp_target_release" target="_blank" rel="noopener">RisingOS release code</a> — the <code>cp2a</code> that <code>riseup</code> passes to lunch</li><li><a href="https://github.com/sebaubuntu-python/dumpyara" target="_blank" rel="noopener">dumpyara</a> — firmware dumper, supported formats, Python 3.9+</li><li><a href="https://github.com/sebaubuntu-python/aospdtgen" target="_blank" rel="noopener">aospdtgen</a> — LineageOS device tree generator, Treble requirement, options</li><li><a href="https://github.com/twrpdtgen/twrpdtgen" target="_blank" rel="noopener">twrpdtgen</a> — TWRP tree generator, supported Android versions, cpio requirement</li><li><a href="https://github.com/LineageOS/android_tools_extract-utils" target="_blank" rel="noopener">LineageOS extract-utils</a> — <code>extract-files.py</code> options</li><li><a href="https://wiki.lineageos.org/devices/peridot/build/variant2/" target="_blank" rel="noopener">LineageOS build guide</a> — host packages and repo setup that RisingOS shares</li><li><a href="https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp" target="_blank" rel="noopener">TWRP minimal manifest</a> — repo init, <code>twrp_</code> prefix, build targets</li></ul></section></main>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Copy buttons
+  document.querySelectorAll('.code').forEach(function (block) {
+    var btn = block.querySelector('.copy');
+    var code = block.querySelector('pre code');
+    btn.addEventListener('click', function () {
+      var done = function (msg) { btn.textContent = msg; setTimeout(function () { btn.textContent = 'Copy'; }, 1600); };
+      var select = function () {
+        var r = document.createRange(); r.selectNodeContents(code);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        done('Selected');
+      };
+      try {
+        navigator.clipboard.writeText(code.textContent).then(function () { done('Copied'); }, select);
+      } catch (e) { select(); }
+    });
+  });
+
+  // Collapse the index on phones; keep it open on wide screens.
+  var det = document.getElementById('toc-details');
+  var mq = window.matchMedia('(max-width: 860px)');
+  var sync = function () { det.open = !mq.matches; };
+  sync();
+  if (mq.addEventListener) mq.addEventListener('change', sync);
+  det.querySelectorAll('a').forEach(function (a) {
+    a.addEventListener('click', function () { if (mq.matches) det.open = false; });
+  });
+
+  // Highlight the section in view.
+  var links = {};
+  det.querySelectorAll('a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        Object.keys(links).forEach(function (k) { links[k].classList.toggle('active', k === e.target.id); });
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('main section[id]').forEach(function (s) { io.observe(s); });
+  }
+
+  // Remember Step 7 checklist ticks for this viewer only.
+  var KEY = 'rising-dt-guide-checks';
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) {}
+  document.querySelectorAll('ul.checklist input').forEach(function (box) {
+    if (saved[box.id]) box.checked = true;
+    box.addEventListener('change', function () {
+      saved[box.id] = box.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+    });
+  });
+})();
+</script>
+</body>
+</html>
